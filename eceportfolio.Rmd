@@ -30,17 +30,16 @@ library(ggplot2)
 library(plotly)
 library(tidyverse)
 library(spotifyr)
-library(tidyverse)
 library(tidymodels)
 library(ggdendro)
 library(heatmaply)
-library(spotifyr)
 library(compmus)
 library(dplyr)
 library(htmltools)
 library(cowplot)
 
-fulldiscography <- get_playlist_audio_features("YOUR_PLAYLIST_ID_HERE", "7mATWeN6t4nSbVrqdppdr4")
+
+fulldiscography <- get_playlist_audio_features("", "7mATWeN6t4nSbVrqdppdr4")
 
 
 gg <- ggplot(fulldiscography, aes(color = track.album.name, 
@@ -71,14 +70,15 @@ gg <- htmlwidgets::onRender(gg, "
   }
 ")
 
-
+rm(fulldiscography)
 gg <- layout(gg, width = 800, height = 400)
 gg
+
+
 
 ```
 
 ***
-
 The graph is showing an overall look at España Circo Este's discography: in a column on the side we can see a list of all of the band's album, singles and Eps, by click on the name of the selected release, we can hide the related songs on the graph, so that it can be easier to make a comparison between two or three album of our choice. If we click on a dot we can see what song it represent and also the exact values of some of the song's features such as popularity, valence, release date etc...
 
 <iframe style="border-radius:12px" src="https://open.spotify.com/embed/playlist/7mATWeN6t4nSbVrqdppdr4?utm_source=generator" width="100%" height="352" frameBorder="0" allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
@@ -86,24 +86,12 @@ The graph is showing an overall look at España Circo Este's discography: in a c
 ### Peculiar Features of the Catalogue
 ```{r}
 
-get_conf_mat <- function(fit) {
-  outcome <- .get_tune_outcome_names(fit)
-  fit |> 
-    collect_predictions() |> 
-    conf_mat(truth = outcome, estimate = .pred_class)
-}  
-
-get_pr <- function(fit) {
-  fit |> 
-    conf_mat_resampled() |> 
-    group_by(Prediction) |> mutate(precision = Freq / sum(Freq)) |> 
-    group_by(Truth) |> mutate(recall = Freq / sum(Freq)) |> 
-    ungroup() |> filter(Prediction == Truth) |> 
-    select(class = Prediction, precision, recall)
-}  
+# delete duplicates track name
+eceplayfinal <- get_playlist_audio_features("", "7mATWeN6t4nSbVrqdppdr4") %>%
+  distinct(str_to_upper(str_trunc(track.name, 7)), .keep_all = TRUE)
 
 ecefinal <-
-  get_playlist_audio_features("", "7mATWeN6t4nSbVrqdppdr4") |>
+  eceplayfinal |>
   add_audio_analysis() |>
   mutate(
     segments = map2(segments, key, compmus_c_transpose),
@@ -123,36 +111,50 @@ ecefinal <-
   mutate_at(vars(pitches, timbre), map, bind_rows) |>
   unnest(cols = c(pitches, timbre))
 
+ecefinal_juice <-
+  recipe(
+    track.name ~
+      danceability +
+      energy +
+      loudness +
+      acousticness +
+      instrumentalness +
+      liveness +
+      time_signature_confidence + C + `C#|Db` + D + `D#|Eb` +
+      E + `F` + `F#|Gb` + G +
+      `G#|Ab` + A  ,
+    data = ecefinal
+  ) |>
+  step_center(all_predictors()) |>
+  step_scale(all_predictors()) |> 
+  prep(ecefinal |> mutate(track.name = str_trunc(track.name, 30))) |>
+  juice() |>
+  column_to_rownames("track.name")
 
-ecefinal <- ecefinal %>%
-  mutate_if(is.numeric, ~rescale(.))
 
-track_names <- ecefinal$`track name`
-
-
-ecefinal <- ecefinal %>%
-  select(-`track.name`)
-
+rm(eceplayfinal)
+rm(ecefinal)
 
 heatmaply(
-  ecefinal,
+  ecefinal_juice,
   hclustfun = hclust,
-  hclust_method = "average",  
+  hclust_method = "average",  # Change for single, average, or complete linkage.
   dist_method = "euclidean",
-  labRow = track_names,  
-  xlab = NULL, 
-  hide_yaxis = TRUE,  
-  margins = c(50, 5, 5, 5), 
-  k_row = 0,  
-  xLabels = c("acousticness", "danceability", "energy", "instrumentalness", "liveness", "loudness", "mode")  
+  
+    scale_fill_gradient_fun = ggplot2::scale_fill_gradient2(
+    low ="blue",
+    mid = "green",
+    high = "yellow",
+    midpoint = 3, 
+    limits = c(-5, 10)
+  )
 )
-
 
 
 ```
 ***
 Using this kind of plot we can have a further look into the band's discography. 
-At the bottom are displayed some of the feature that characterize Espana Circo Este Song, such as liveness, loudness, danceability or notes. The graph shows for example that there a more major key songs, and that they lack in acousticness and instrumentalness, but almost all of the tracks have a high rate of time signature confidence.
+At the bottom are displayed some of the feature that characterize Espana Circo Este Song, such as liveness, loudness and danceability. The graph shows for example that there a more major key songs, and that they lack in instrumentalness.
 
 ### Key and Mode Distribution throught time
 ```{r}
@@ -179,6 +181,8 @@ modes_df <- data.frame(category = c("First_Two_Album", "Last_Two_Album"),
 First_Two_Album <- First_Two_Album %>% mutate(mode = first_mode)
 Last_Two_Album <- Last_Two_Album %>% mutate(mode = post_mode)
 
+rm(First_Two_Album)
+rm(Last_Two_Album)
 
 ggplot(ecedisco, aes(x = key, fill = as.factor(mode))) +
   geom_tile(stat = "count", color = "black", size = 0.5) +
@@ -261,19 +265,13 @@ centometri_plot <- centometri_data %>%
   theme_minimal() +
   scale_fill_viridis_c() + ggtitle('Cento Metri')
 
+rm(lrea_data)
+rm(centometri_data)
+
 
 combined_plot <- wrap_plots(lrea_plot, centometri_plot, nrow = 2)
 
-
-
 combined_plot 
-
-library(htmltools)
-
-library(htmltools)
-
-
-
 
 
 ```
@@ -376,6 +374,8 @@ plot2 <- bind_rows(
 ) |>
   create_plot() + ggtitle('Mi vida Samba - Live 2022')
 
+rm(mividasamba18)
+rm(mividasamba23)
 
 plot1 / plot2
 
@@ -480,11 +480,7 @@ key_templates <-
     "B:maj", circshift(major_key, 11),
     "D#:min", circshift(minor_key, 3)
   )
-library(ggplot2)
-library(tidyverse)
-library(compmus)
-library(spotifyr)
-library(cowplot)
+
 stomaco <-
   get_tidy_audio_analysis("5ITeFWtBRXwKgngzeYoy3v") |>
   compmus_align(beats, segments) |>
@@ -542,6 +538,9 @@ ska_plot <- ska |>
   theme(axis.text.y = element_text(size = 6)) +  
   labs(x = "Time (s)", y = "") + ggtitle('Il Levare del Cielo e del Mare')
 
+rm(stomaco)
+rm(ska)
+
 print(plot_grid(stomaco_plot, ska_plot, nrow = 2))
 
 ```
@@ -586,6 +585,8 @@ p <- combined_data %>%
   guides(color = guide_legend(title = "Track")) +
   theme(legend.position = "top") 
 
+rm(Lacosa)
+rm(gabriel_pt.2)
 
 ggplotly(p) %>%
   config(displayModeBar = TRUE)  
@@ -620,6 +621,8 @@ plot_afuoco2 <- afuoco2 |>
   labs(x = "Time (s)", y = "Tempo (BPM)") + ggtitle("La Fame e La sete Medley - Live 2022") +
   theme_classic()
 
+rm(afuoco)
+rm(afuoco2)
 
 plot_grid(plot_afuoco, plot_afuoco2, ncol = 1)
 
